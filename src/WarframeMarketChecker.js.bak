@@ -1,20 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
-import { LineChart, Line, ResponsiveContainer } from "recharts"; // Mejora 14
+import { LineChart, Line, ResponsiveContainer } from "recharts";
 
 export default function WarframeMarketChecker() {
-  // Dark mode
+  // Dark mode toggle
   const [dark, setDark] = useState(localStorage.theme === "dark");
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.theme = dark ? "dark" : "light";
   }, [dark]);
 
+  // Main states
   const [item, setItem] = useState("");
   const [selectedItem, setSelectedItem] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   const [results, setResults] = useState([]);
-  const [stats, setStats] = useState([]); // Datos históricos
+  const [stats, setStats] = useState([]);
   const [loading, setLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [highlight, setHighlight] = useState(-1);
@@ -22,53 +23,43 @@ export default function WarframeMarketChecker() {
     JSON.parse(localStorage.getItem("wf_history") || "[]")
   );
 
-  const itemsCache = useRef(null); // Mejora 13: caché de items
-  const debounceRef = useRef(null);
-
-  // Carga inicial items en caché
+  // Cache items
+  const itemsCache = useRef(null);
   useEffect(() => {
     if (!itemsCache.current) {
-      axios
-        .get("/v1/items")
-        .then(({ data }) => {
-          itemsCache.current = data.payload.items;
-        })
-        .catch(() => {
-          itemsCache.current = [];
-        });
+      axios.get("/v1/items").then(({ data }) => {
+        itemsCache.current = data.payload.items;
+      }).catch(() => itemsCache.current = []);
     }
   }, []);
 
-  // Apply URL param
+  // Load from URL param
   useEffect(() => {
     const slug = new URLSearchParams(window.location.search).get("t");
     if (slug) {
-      const display = slug.replace(/_/g, " ");
-      onSelect({ url_name: slug, item_name: display });
+      onSelect({ url_name: slug, item_name: slug.replace(/_/g, " ") });
     }
   }, []);
 
-  // Save history
+  // Persist history
   useEffect(() => {
     localStorage.setItem("wf_history", JSON.stringify(history));
   }, [history]);
 
-  // Sugerencias usando cache
+  // Debounce
+  const debounceRef = useRef(null);
   const fetchSuggestions = (query) => {
     if (query.length < 2) return setSuggestions([]);
     const items = itemsCache.current || [];
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     const filtered = items
-      .filter((i) => {
-        const name = i.item_name.replace(/_/g, " ").toLowerCase();
-        return terms.every((t) => name.includes(t));
-      })
-      .sort((a, b) => a.item_name.localeCompare(b.item_name));
+      .filter(i => terms.every(t => i.item_name.replace(/_/g," ").toLowerCase().includes(t)))
+      .sort((a,b) => a.item_name.localeCompare(b.item_name));
     setSuggestions(filtered);
     setHighlight(-1);
   };
 
-  const onChangeInput = (e) => {
+  const onChangeInput = e => {
     const v = e.target.value;
     setItem(v);
     setSelectedItem(null);
@@ -77,198 +68,133 @@ export default function WarframeMarketChecker() {
     debounceRef.current = setTimeout(() => fetchSuggestions(v), 300);
   };
 
-  const onKeyDown = useCallback(
-    (e) => {
-      if (!suggestions.length) return;
-      if (e.key === "ArrowDown") {
-        setHighlight((h) => Math.min(h + 1, suggestions.length - 1));
-      } else if (e.key === "ArrowUp") {
-        setHighlight((h) => Math.max(h - 1, 0));
-      } else if (e.key === "Enter" && highlight >= 0) {
-        onSelect(suggestions[highlight]);
-      } else if (e.key === "Escape") {
-        setSuggestions([]);
-      }
-    },
-    [suggestions, highlight]
-  );
+  const onKeyDown = useCallback(e => {
+    if (!suggestions.length) return;
+    if (e.key === 'ArrowDown') setHighlight(h => Math.min(h+1, suggestions.length-1));
+    if (e.key === 'ArrowUp') setHighlight(h => Math.max(h-1, 0));
+    if (e.key === 'Enter' && highlight>=0) onSelect(suggestions[highlight]);
+    if (e.key === 'Escape') setSuggestions([]);
+  }, [suggestions, highlight]);
 
-  const onSelect = (sug) => {
+  const onSelect = sug => {
     setSelectedItem(sug);
     setItem(sug.item_name);
     setSuggestions([]);
     setResults([]);
-    setHistory((h) => [sug.item_name, ...h.filter((x) => x !== sug.item_name)].slice(0, 10));
-    window.history.replaceState(null, "", `?t=${sug.url_name}`);
+    setHistory(h => [sug.item_name, ...h.filter(x=>x!==sug.item_name)].slice(0,10));
+    window.history.replaceState(null, '', `?t=${sug.url_name}`);
     buscarObjeto(sug.url_name, sug.item_name);
   };
 
   const buscarObjeto = async (slugParam, displayName) => {
-    setLoading(true);
-    setResults([]);
-    setStats([]);
-    const slug = slugParam
-      ? slugParam
-      : item.toLowerCase().replace(/ /g, "_").replace(/'/g, "");
-    const display = displayName ?? item;
-    const headers = { accept: "application/json", platform: "pc", language: "es" };
-
+    setLoading(true); setResults([]); setStats([]);
+    const slug = slugParam || item.toLowerCase().replace(/ /g,'_').replace(/'/g,'');
+    const display = displayName||item;
+    const headers = { accept:'application/json',platform:'pc',language:'es' };
     try {
-      const [{ data: ordersData }, { data: detailData }] = await Promise.all([
-        axios.get(`/v1/items/${slug}/orders`, { headers }),
-        axios.get(`/v1/items/${slug}`, { headers }),
+      const [{data:ordersData},{data:detailData}] = await Promise.all([
+        axios.get(`/v1/items/${slug}/orders`,{headers}),
+        axios.get(`/v1/items/${slug}`,{headers})
       ]);
-      // Stats históricos (Mejora 14)
-      if (detailData.payload.history) {
-        const hist = detailData.payload.history.map((p) => ({ time: p.datetime, avg: p.avg_price }));
-        setStats(hist);
+      // Historical stats
+      if(detailData.payload.history){
+        setStats(detailData.payload.history.map(p=>({time:p.datetime,avg:p.avg_price})));
       }
       const sellers = ordersData.payload.orders
-        .filter((o) => o.user.status === "ingame" && o.order_type === "sell")
-        .sort((a, b) => a.platinum - b.platinum)
-        .slice(0, 3);
-
-      if (!sellers.length) {
-        setResults([{ error: `No hay vendedores online para "${display}".` }]);
+        .filter(o=>o.user.status==='ingame'&&o.order_type==='sell')
+        .sort((a,b)=>a.platinum-b.platinum).slice(0,3);
+      if(!sellers.length){
+        setResults([{error:`No hay vendedores online para "${display}".`}]);
       } else {
         const icon = detailData.payload.item.items_in_set[0].icon;
         const imagen = `https://warframe.market/static/assets/${icon}`;
-        const top3 = sellers.map((s) => ({
-          item: display,
-          precio: s.platinum,
-          vendedor: s.user.ingame_name,
-          imagen,
-        }));
-        setResults(top3);
+        setResults(sellers.map(s=>({item:display,precio:s.platinum,vendedor:s.user.ingame_name,imagen})));
       }
-    } catch {
-      setResults([{ error: `Error al buscar "${display}".` }]);
-    } finally {
-      setLoading(false);
-      setCopiedIndex(null);
+    } catch{
+      setResults([{error:`Error al buscar "${display}".`}]);
+    } finally{
+      setLoading(false); setCopiedIndex(null);
     }
   };
 
-  const copiarTexto = (vendedor, precio, idx) => {
-    const msg = `/w ${vendedor} Hi! I want to buy: "${item}" for ${precio} platinum. (warframe.market)`;
+  const copiarTexto = (vendor, price, idx) => {
+    const msg = `/w ${vendor} Hi! I want to buy: "${item}" for ${price} platinum. (warframe.market)`;
     navigator.clipboard.writeText(msg);
     setCopiedIndex(idx);
-    setTimeout(() => setCopiedIndex(null), 2000);
+    setTimeout(()=>setCopiedIndex(null),2000);
   };
 
   return (
     <div className="max-w-xl mx-auto p-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg mt-10 font-sans">
       <div className="flex justify-end mb-4">
-        <button
-          onClick={() => setDark((d) => !d)}
-          className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-gray-900 dark:text-gray-100"
-        >
-          {dark ? "☀️ Claro" : "🌙 Oscuro"}
+        <button onClick={()=>setDark(d=>!d)} className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded text-gray-900 dark:text-gray-100">
+          {dark?'☀️ Claro':'🌙 Oscuro'}
         </button>
       </div>
-      <h1 className="text-3xl font-extrabold mb-6 text-gray-900 dark:text-gray-100">
-        🔍 Buscador de objetos Warframe
-      </h1>
-      {/* Historial */}
-      {history.length > 0 && (
-        <ul className="mb-3 text-sm text-gray-600 dark:text-gray-300">
-          {history.map((h, i) => (
-            <li
-              key={i}
-              onClick={() => onSelect({ url_name: h.toLowerCase().replace(/ /g, '_'), item_name: h })}
-              className="cursor-pointer hover:underline text-gray-900 dark:text-gray-100"
-            >
-              {h}
+      <h1 className="text-3xl font-extrabold mb-6 text-gray-900 dark:text-gray-100">🔍 Buscador de objetos Warframe</h1>
+      {/* History */}
+      {history.length>0 && (
+      <ul className="mb-3 text-sm text-gray-600 dark:text-gray-300">{history.map((h,i)=>(
+        <li key={i} onClick={()=>onSelect({url_name:h.toLowerCase().replace(/ /g,'_'),item_name:h})} className="cursor-pointer hover:underline text-gray-900 dark:text-gray-100">{h}</li>
+      ))}</ul>)}
+      {/* Input */}
+      <div className="relative mb-3">
+        <input type="text" placeholder="Escribe el nombre del objeto..." value={item}
+          onChange={onChangeInput} onKeyDown={onKeyDown}
+          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-4 py-3 focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100"/>
+        {!selectedItem && suggestions.length>0 && (
+        <ul className="absolute z-10 w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto text-gray-900 dark:text-gray-100">
+          {suggestions.map((sug,idx)=>(
+            <li key={sug.url_name} onClick={()=>onSelect(sug)}
+                className={`px-4 py-3 text-sm sm:text-base cursor-pointer transition text-gray-900 dark:text-gray-100 ${highlight===idx?'bg-blue-200 dark:bg-blue-500':'hover:bg-blue-100 dark:hover:bg-blue-600'}`}>
+              {sug.item_name.replace(/_/g,' ')}
             </li>
           ))}
-        </ul>
-      )}
-      {/* Input + sugerencias */}
-      <div className="relative mb-3">
-        <input
-          type="text"
-          placeholder="Escribe el nombre del objeto..."
-          value={item}
-          onChange={onChangeInput}
-          onKeyDown={onKeyDown}
-          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md px-4 py-3 focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100"
-        />
-        {!selectedItem && suggestions.length > 0 && (
-          <ul className="absolute z-10 w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto text-gray-900 dark:text-gray-100">
-            {suggestions.map((sug, idx) => (
-              <li
-                key={sug.url_name}
-                onClick={() => onSelect(sug)}
-                className={`px-4 py-3 text-sm sm:text-base cursor-pointer transition text-gray-900 dark:text-gray-100 ${
-                  highlight === idx
-                    ? 'bg-blue-200 dark:bg-blue-500'
-                    : 'hover:bg-blue-100 dark:hover:bg-blue-600'
-                }`}
-              >
-                {sug.item_name.replace(/_/g, " ")}
-              </li>
-            ))}
-          </ul>
-        )}
+        </ul>)}
       </div>
-      {/* Chart estadístico (14) */}
-      {stats.length > 0 && (
-        <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg mb-4">
-          <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">Histórico precio medio</p>
-          <ResponsiveContainer width="100%" height={60}>
-            <LineChart data={stats}>
-              <Line dataKey="avg" stroke="#3b82f6" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-      {/* Resultados */}
-      {results.map((res, idx) =>
-        res.error ? (
-          <p key={idx} className="text-red-600 font-semibold mt-4">{res.error}</p>
-        ) : (
-          <div
-            key={idx}
-            className="mt-6 bg-gray-50 dark:bg-gray-700 rounded-lg p-5 shadow-md flex flex-col gap-4"
-          >
-            <div className="flex flex-col md:flex-row md:items-center gap-6">
-              <img
-                src={res.imagen}
-                alt={res.item}
-                className="w-32 h-32 object-contain rounded-lg border border-gray-200 dark:border-gray-600 shadow mx-auto md:mx-0"
-              />
-              <div className="space-y-1 text-center md:text-left text-gray-900 dark:text-gray-100">
-                <p className="font-bold text-lg">🧱 Objeto: {res.item}</p>
-                <p>
-                  💰 Precio: <span className="font-semibold">{res.precio} platinos</span>
-                </p>
-                <p>
-                  🧍 Vendedor: <span className="font-semibold">{res.vendedor}</span>
-                </p>
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-md border border-gray-200 dark:border-gray-600 relative">
-              <p className="font-semibold mb-2 text-gray-900 dark:text-gray-100">💬 Mensaje para copiar:</p>
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                <code className="bg-gray-100 dark:bg-gray-900 p-2 font-mono overflow-x-auto text-sm flex-1 rounded text-gray-900 dark:text-gray-100">
-                  {`/w ${res.vendedor} Hi! I want to buy: "${res.item}" for ${res.precio} platinum. (warframe.market)`}
-                </code>
-                <button
-                  onClick={() => copiarTexto(res.vendedor, res.precio, idx)}
-                  className="bg-blue-600 text-white px-4 py-3 sm:py-2 rounded-md hover:bg-blue-700 transition relative"
-                >
-                  Copiar
-                </button>
-                {copiedIndex === idx && (
-                  <span className="absolute -top-8 right-0 bg-green-600 text-white text-xs rounded px-3 py-1 animate-fade-in-out">
-                    ¡Copiado!
-                  </span>
-                )}
-              </div>
+      {/* Results */}
+      {results.map((res,idx)=>res.error?
+        <p key={idx} className="text-red-600 font-semibold mt-4">{res.error}</p>:
+        <div key={idx} className="mt-6 bg-gray-50 dark:bg-gray-700 rounded-lg p-5 shadow-md flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row md:items-center gap-6">
+            <img src={res.imagen} alt={res.item}
+                 className="w-32 h-32 object-contain rounded-lg border border-gray-200 dark:border-gray-600 shadow mx-auto md:mx-0"/>
+            <div className="space-y-1 text-center md:text-left text-gray-900 dark:text-gray-100">
+              <p className="font-bold text-lg">🧱 Objeto: {res.item}</p>
+              <p>💰 Precio: <span className="font-semibold">{res.precio} platinos</span></p>
+              <p>🧍 Vendedor: <span className="font-semibold">{res.vendedor}</span></p>
             </div>
           </div>
-        )
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-md border border-gray-200 dark:border-gray-600 relative">
+            <p className="font-semibold mb-2 text-gray-900 dark:text-gray-100">💬 Mensaje para copiar:</p>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <code className="bg-gray-100 dark:bg-gray-900 p-2 font-mono overflow-x-auto text-sm flex-1 rounded text-gray-900 dark:text-gray-100">
+                {`/w ${res.vendedor} Hi! I want to buy: "${res.item}" for ${res.precio} platinum. (warframe.market)`}
+              </code>
+              <button onClick={()=>copiarTexto(res.vendedor,res.precio,idx)}
+                      className="bg-blue-600 text-white px-4 py-3 sm:py-2 rounded-md hover:bg-blue-700 transition relative">
+                Copiar
+              </button>
+              {copiedIndex===idx&&(
+                <span className="absolute -top-8 right-0 bg-green-600 text-white text-xs rounded px-3 py-1 animate-fade-in-out">¡Copiado!</span>
+              )}
+            </div>
+          </div>
+        </div>
       )}
+      {/* Histórico (moved bottom) */}
+      {stats.length>0?(
+        <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg mt-6">
+          <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">Histórico precio medio</p>
+          <ResponsiveContainer width="100%" height={80}>
+            <LineChart data={stats}><Line dataKey="avg" stroke="#3b82f6" dot={false}/></LineChart>
+          </ResponsiveContainer>
+        </div>
+      ):(selectedItem&&!loading&&(
+        <p className="text-center text-gray-600 dark:text-gray-300 mt-6">
+          No hay datos históricos disponibles para <strong>{item}</strong>.
+        </p>
+      ))}
     </div>
   );
 }

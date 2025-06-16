@@ -26,12 +26,11 @@ export default function WarframeMarketChecker() {
   // Cache items
   const itemsCache = useRef(null);
   useEffect(() => {
-    if (!itemsCache.current) {
-      axios.get("/v1/items").then(({ data }) => {
-        itemsCache.current = data.payload.items;
-      }).catch(() => itemsCache.current = []);
-    }
-  }, []);
+  fetch("/items.json")
+    .then(res => res.json())
+    .then(items => { itemsCache.current = items; })
+    .catch(() => { itemsCache.current = []; });
+}, []);
 
   // Load from URL param
   useEffect(() => {
