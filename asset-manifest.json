@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/Warframe/static/css/main.9106929d.css",
+    "main.js": "/Warframe/static/js/main.8f667b7a.js",
+    "index.html": "/Warframe/index.html",
+    "main.9106929d.css.map": "/Warframe/static/css/main.9106929d.css.map",
+    "main.8f667b7a.js.map": "/Warframe/static/js/main.8f667b7a.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.9106929d.css",
+    "static/js/main.8f667b7a.js"
+  ]
+}
