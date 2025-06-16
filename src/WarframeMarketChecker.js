@@ -119,8 +119,8 @@ export default function WarframeMarketChecker() {
 const ordersUrl   = `${proxy}${encodeURIComponent(`${API_BASE}/items/${slug}/orders`)}`;
 const detailUrl   = `${proxy}${encodeURIComponent(`${API_BASE}/items/${slug}`)}`;
 const [{ data: ordersData }, { data: detailData }] = await Promise.all([
-  axios.get(ordersUrl, { headers }),
-  axios.get(detailUrl,  { headers })
+  axios.get(ordersUrl),
+  axios.get(detailUrl)
 ]);
 
       // Historical stats
