@@ -114,10 +114,15 @@ export default function WarframeMarketChecker() {
     const display = displayName || item;
     const headers = { accept:'application/json', platform:'pc', language:'es' };
     try {
-      const [{data:ordersData},{data:detailData}] = await Promise.all([
-        axios.get(`${API_BASE}/items/${slug}/orders`, { headers }),
-        axios.get(`${API_BASE}/items/${slug}`, { headers })
-      ]);
+     const proxy = "https://api.allorigins.win/raw?url=";
+// Fetch orders and detail via CORS proxy
+const ordersUrl   = `${proxy}${encodeURIComponent(`${API_BASE}/items/${slug}/orders`)}`;
+const detailUrl   = `${proxy}${encodeURIComponent(`${API_BASE}/items/${slug}`)}`;
+const [{ data: ordersData }, { data: detailData }] = await Promise.all([
+  axios.get(ordersUrl, { headers }),
+  axios.get(detailUrl,  { headers })
+]);
+
       // Historical stats
       if (detailData.payload.history) {
         setStats(detailData.payload.history.map(p => ({ time:p.datetime, avg:p.avg_price })));
