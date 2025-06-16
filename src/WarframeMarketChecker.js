@@ -2,6 +2,14 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 
+  function toTitleCase(str) {
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 // Base API URL
 const API_BASE = "https://api.warframe.market/v1";
 
@@ -22,6 +30,7 @@ export default function WarframeMarketChecker() {
   const [loading, setLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [highlight, setHighlight] = useState(-1);
+  const [relatedParts, setRelatedParts] = useState([]);
   const [history, setHistory] = useState(
     JSON.parse(localStorage.getItem("wf_history") || "[]")
   );
@@ -42,10 +51,16 @@ export default function WarframeMarketChecker() {
   }, [history]);
 
   // Load from URL param
-  useEffect(() => {
-    const slug = new URLSearchParams(window.location.search).get("t");
-    if (slug) onSelect({ url_name: slug, item_name: slug.replace(/_/g, " ") });
-  }, []);
+   useEffect(() => {
+   const slug = new URLSearchParams(window.location.search).get("t");
+   if (slug) {
+   	onSelect({
+   	url_name: slug,
+   	item_name: toTitleCase(slug.replace(/_/g, " "))
+   	});
+   }
+   }, []);
+
 
   // Debounce suggestions
   const debounceRef = useRef();
@@ -68,6 +83,7 @@ export default function WarframeMarketChecker() {
     setItem(v);
     setSelectedItem(null);
     setResults([]);
+    setRelatedParts([]);
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => fetchSuggestions(v), 300);
   };
@@ -89,21 +105,35 @@ export default function WarframeMarketChecker() {
   );
 
   const onSelect = sug => {
+    // Limpia partes relacionadas previas
+    setRelatedParts([]);
+    // Calcula partes relacionadas
+    const prefix = sug.item_name.split(" ")[0].toLowerCase();
+    const parts = itemsCache.current.filter(
+      i =>
+        i.item_name.replace(/_/g, " ").toLowerCase().startsWith(prefix) &&
+        i.url_name !== sug.url_name
+    );
+    setRelatedParts(parts);
+	// Normaliza el nombre a Title Case
+	const title = toTitleCase(sug.item_name);
+	const slugParam = title.replace(/ /g, "_");
+    // Selección
     setSelectedItem(sug);
-    setItem(sug.item_name);
+    setItem(title);
     setSuggestions([]);
-    setHistory(h => [sug.item_name, ...h.filter(x => x !== sug.item_name)].slice(0, 10));
-    window.history.replaceState(null, "", `?t=${sug.url_name}`);
+	// Guarda en historial solo la versión Title Case, evitando duplicados
+    setHistory(h => [sug.item_name, ...h.filter(x => x !== sug.item_name)].slice(0, 5));
+    window.history.replaceState(null, "", `?t=${encodeURIComponent(slugParam)}`);
     buscarObjeto(sug.url_name, sug.item_name);
   };
 
-  // Search object function
+  // Search object function (uses AllOrigins CORS proxy)
   const buscarObjeto = async (slugParam, displayName) => {
     setLoading(true);
     setResults([]);
     setStats([]);
-    const slug =
-      slugParam || item.toLowerCase().replace(/ /g, "_").replace(/'/g, "");
+    const slug = slugParam || item.toLowerCase().replace(/ /g, "_").replace(/'/g, "");
     const display = displayName || item;
 
     try {
@@ -127,17 +157,19 @@ export default function WarframeMarketChecker() {
 
       // Sellers
       const sellers = ordersData.payload.orders
-        .filter(
-          o => o.user.status === "ingame" && o.order_type === "sell"
-        )
+        .filter(o => o.user.status === "ingame" && o.order_type === "sell")
         .sort((a, b) => a.platinum - b.platinum)
         .slice(0, 3);
 
       if (!sellers.length) {
         setResults([{ error: `No hay vendedores online para "${display}".` }]);
       } else {
-        const icon = detailData.payload.item.items_in_set[0].icon;
-        const imagen = `https://warframe.market/static/assets/${icon}`;
+        // Busca la parte específica en items_in_set
+        const partsArr = detailData.payload.item.items_in_set;
+        const match = partsArr.find(p => p.url_name === slug);
+        const iconName = match ? match.icon : partsArr[0].icon;
+        const imagen = `https://warframe.market/static/assets/${iconName}`;
+
         setResults(
           sellers.map((s, i) => ({
             item: display,
@@ -175,32 +207,60 @@ export default function WarframeMarketChecker() {
           {dark ? "☀️ Claro" : "🌙 Oscuro"}
         </button>
       </div>
-
       <h1 className="text-3xl font-extrabold mb-6 text-gray-900 dark:text-gray-100">
         🔍 Buscador de objetos Warframe
       </h1>
 
-      {/* History */}
-      {history.length > 0 && (
-        <ul className="mb-3 text-sm text-gray-600 dark:text-gray-300">
-          {history.map((h, i) => (
-            <li
-              key={i}
-              onClick={() =>
-                onSelect({
-                  url_name: h.toLowerCase().replace(/ /g, "_"),
-                  item_name: h
-                })
-              }
-              className="cursor-pointer hover:underline text-gray-900 dark:text-gray-100"
+      {/* Partes relacionadas */}
+      {relatedParts.length > 0 && (
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900 rounded">
+          <p className="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
+            Partes relacionadas:
+          </p>
+          {relatedParts.map((p) => (
+            <button
+              key={p.url_name}
+              onClick={() => onSelect(p)}
+              className="underline hover:text-blue-600 dark:hover:text-blue-400 mr-3"
             >
-              {h}
-            </li>
+              {p.item_name.replace(/_/g, ' ')}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
 
-      {/* Input and suggestions */}
+      {/* History */}
+      {history.length > 0 && (
+        <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+          <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+            Búsquedas recientes:
+          </p>
+          <ul className="space-y-1 text-gray-900 dark:text-gray-100">
+            {history.map((h, i) => (
+              <li
+                key={i}
+                onClick={() =>
+                  onSelect({
+                    url_name: h.toLowerCase().replace(/ /g, '_'),
+                    item_name: h
+                  })
+                }
+                className="cursor-pointer hover:underline"
+              >
+                {h}
+              </li>
+            ))}
+          </ul>
+		<button
+            onClick={() => setHistory([])}
+            className="text-sm text-red-600 hover:underline"
+          >
+            Borrar historial
+          </button>
+        </div>
+      )}
+
+      {/* Input + suggestions */}
       <div className="relative mb-3">
         <input
           type="text"
@@ -239,7 +299,7 @@ export default function WarframeMarketChecker() {
         </button>
       )}
 
-      {/* Results and chart */}
+      {/* Results */}
       {results.map((res, idx) =>
         res.error ? (
           <p key={idx} className="text-red-600 font-semibold mt-4">
@@ -257,23 +317,13 @@ export default function WarframeMarketChecker() {
                 className="w-32 h-32 object-contain rounded-lg border border-gray-200 dark:border-gray-600 shadow mx-auto md:mx-0"
               />
               <div className="space-y-1 text-center md:text-left text-gray-900 dark:text-gray-100">
-                <p className="font-bold text-lg">
-                  🧱 Objeto: {res.item}
-                </p>
-                <p>
-                  💰 Precio:{' '}
-                  <span className="font-semibold">{res.precio} platinos</span>
-                </p>
-                <p>
-                  🧍 Vendedor:{' '}
-                  <span className="font-semibold">{res.vendedor}</span>
-                </p>
+                <p className="font-bold text-lg">🧱 Objeto: {res.item}</p>
+                <p>💰 Precio:{' '}<span className="font-semibold">{res.precio} platinos</span></p>
+                <p>🧍 Venedor:{' '}<span className="font-semibold">{res.vendedor}</span></p>
               </div>
             </div>
             <div className="bg-white dark:bg-gray-800 p-4 rounded-md border border-gray-200 dark:border-gray-600 relative">
-              <p className="font-semibold mb-2 text-gray-900 dark:text-gray-100">
-                💬 Mensaje para copiar:
-              </p>
+              <p className="font-semibold mb-2 text-gray-900 dark:text-gray-100">💬 Mensaje para copiar:</p>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                 <code
                   className="bg-gray-100 dark:bg-gray-900 p-2 font-mono overflow-x-auto text-sm flex-1 rounded text-gray-900 dark:text-gray-100"
@@ -297,18 +347,6 @@ export default function WarframeMarketChecker() {
         )
       )}
 
-      {stats.length > 0 && (
-        <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg mt-6">
-          <p className="text-sm text-gray-700 dark:text-gray-200 mb-2">
-            Histórico precio medio
-          </p>
-          <ResponsiveContainer width="100%" height={80}>
-            <LineChart data={stats}>
-              <Line dataKey="avg" stroke="#3b82f6" dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
     </div>
   );
 }
