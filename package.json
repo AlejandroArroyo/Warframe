@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "proxy": "https://api.warframe.market",
-  "homepage": "https://AlejandroArroyo.github.io/Warframe",
+  "homepage": "https://alejandroarroyo.github.io/Warframe",
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
