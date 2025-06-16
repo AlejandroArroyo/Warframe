@@ -30,7 +30,8 @@ export default function WarframeMarketChecker() {
   const itemsCache = useRef(null);
   useEffect(() => {
     // Use PUBLIC_URL to ensure correct path on GitHub Pages
-    const path = "items.json";
+    const publicUrl = process.env.PUBLIC_URL || '';
+    const path = `${publicUrl}/items.json`;
     fetch(path)
       .then(res => {
         if (!res.ok) throw new Error("No items.json");
