@@ -51,15 +51,15 @@ export default function WarframeMarketChecker() {
   }, [history]);
 
   // Load from URL param
-   useEffect(() => {
-   const slug = new URLSearchParams(window.location.search).get("t");
-   if (slug) {
-   	onSelect({
-   	url_name: slug,
-   	item_name: toTitleCase(slug.replace(/_/g, " "))
-   	});
-   }
-   }, []);
+  useEffect(() => {
+    const slug = new URLSearchParams(window.location.search).get("t");
+    if (slug) {
+      onSelect({
+        url_name: slug.toLowerCase(),
+        item_name: toTitleCase(slug.replace(/_/g, " "))
+      });
+    }
+  }, []);
 
 
   // Debounce suggestions
@@ -115,16 +115,15 @@ export default function WarframeMarketChecker() {
         i.url_name !== sug.url_name
     );
     setRelatedParts(parts);
-	// Normaliza el nombre a Title Case
-	const title = toTitleCase(sug.item_name);
-	const slugParam = title.replace(/ /g, "_");
+    // Normaliza el nombre a Title Case
+    const title = toTitleCase(sug.item_name);
     // Selección
     setSelectedItem(sug);
     setItem(title);
     setSuggestions([]);
-	// Guarda en historial solo la versión Title Case, evitando duplicados
+    // Guarda en historial solo la versión Title Case, evitando duplicados
     setHistory(h => [sug.item_name, ...h.filter(x => x !== sug.item_name)].slice(0, 5));
-    window.history.replaceState(null, "", `?t=${encodeURIComponent(slugParam)}`);
+    window.history.replaceState(null, "", `?t=${encodeURIComponent(sug.url_name)}`);
     buscarObjeto(sug.url_name, sug.item_name);
   };
 
@@ -189,9 +188,7 @@ export default function WarframeMarketChecker() {
   };
 
   const copiarTexto = (vendor, price, idx) => {
-    navigator.clipboard.writeText(
-      `/w ${vendor} Hi! I want to buy: "${item}" for ${price} platinum. (warframe.market)`
-    );
+    navigator.clipboard.writeText(`/w ${vendor} Hi! I want to buy: "${item}" for ${price} platinum. (warframe.market)`);
     setCopiedIndex(idx);
     setTimeout(() => setCopiedIndex(null), 2000);
   };
